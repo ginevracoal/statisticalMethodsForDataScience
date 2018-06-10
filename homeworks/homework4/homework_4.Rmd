@@ -1,0 +1,368 @@
+---
+title: "Homework 4"
+output:
+  pdf_document: default
+  html_notebook: default
+editor_options: 
+  chunk_output_type: inline
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+*Ginevra Carbone*
+
+
+## Exercise 1 
+
+*Above we found that the posterior mean is a weighted mean of the prior belief and the likelihood mean. Using some simple algebra, retrieve other two alternative expression and provide a nice interpretation.*
+
+$$
+\begin{aligned}
+\mu^* &= \frac{n\tau^2 \bar{y}+\sigma^2 \mu}{n \tau^2 +\sigma^2} \\
+&= \bar{y} + \frac{n\tau^2 \bar{y}+\sigma^2 \mu - n\tau^2 \bar{y} -\sigma^2 \bar{y}}{n \tau^2 +\sigma^2} \\
+&= \bar{y} - (\bar{y}-\mu)\frac{\sigma^2}{n\tau^2+\sigma^2}
+\end{aligned}
+$$
+Here the posterior mean is expressed as the sample mean plus an adjustment toward the prior mean. From this expression one can easily notice that, as previously pointed out, $\lim_{n\rightarrow \infty} \mu^* = \bar{y}$ and $\lim_{\tau \rightarrow 0} \mu^* = \mu$.
+
+$$
+\begin{aligned}
+\mu^* &= \frac{n\tau^2 \bar{y}+\sigma^2 \mu}{n \tau^2 +\sigma^2} \\
+& = \mu + \frac{n\tau^2 \bar{y}+\sigma^2 \mu - n \tau^2\mu-\sigma^2 \mu }{n \tau^2 +\sigma^2}\\
+&= \mu + (\bar{y}-\mu) \frac{n \tau^2}{n\tau^2+\sigma^2}
+\end{aligned}
+$$
+
+In this case the posterior mean is expressed as the prior mean plus an adjustment toward the sample mean.
+
+## Exercise 2
+
+*In `sim` in the code above, you find the MCMC output which allows for approximating the posterior distribution of our parameter of interest with $S$ draws of $\theta$. Please, produce an histogram for these random draws  $\theta^{(1)},\dots,\theta^{(S)}$ compute the empirical quantiles, and overlap the true posterior distribution.*
+
+```{r echo=TRUE, warning=FALSE}
+#input values
+
+#true mean
+theta_sample <- 2
+#likelihood variance
+sigma2 <- 2
+#sample size
+n <- 10
+#prior mean
+mu <- 7
+#prior variance
+tau2 <- 2
+
+#generate some data
+set.seed(123)
+y <- rnorm(n, theta_sample, sqrt(sigma2))
+
+#posterior mean
+mu_star <- ((1/tau2)*mu+(n/sigma2)*mean(y))/((1/tau2)+(n/sigma2))
+
+#posterior standard deviation
+sd_star <- sqrt(1/( (1/tau2)+(n/sigma2)))
+
+library(rstan)
+data<- list(N=n, y=y, sigma =sqrt(sigma2), mu = mu, tau = sqrt(tau2))
+fit <- stan(file="stan/normal.stan", data = data, chains = 4, iter=2000)
+#extract Stan output
+sim <- extract(fit)
+
+# MCMC posterior
+hist(sim$theta, breaks=40, xlim = c(0,5), probability = TRUE)
+
+# true posterior
+curve(dnorm(x, mu_star, sd_star), 
+  xlab=expression(theta), ylab="", col="blue", lwd=2, add=T)
+
+# compute empirical quantiles
+qt <- quantile(sim$theta)
+segments(qt, 0, qt, dnorm(qt, mu_star, sd_star),  col = 2)
+
+legend(3.5, 0.6, c("MCMC posterior", "true posterior",
+                   "quantiles"), 
+       c("black", "blue", "red" ),
+       lty=c(2,1,1),lwd=c(1,1,1), cex=0.8)
+
+```
+
+## Exercise 3
+
+*Suppose you receive $n=15$ phone calls in a day, and you want to build a model for assessing their average length. Your likelihood for each call length is $y_i\sim Poisson(\lambda)$. Now, you have to choose the prior $\pi(\lambda)$. Please, tell which of these priors is adequate for describing the problem, and provide a short motivation for each of them:*
+
+1. $\pi(\lambda)=Beta(4,2)$ 
+2. $\pi(\lambda)=Normal(1,2)$
+3. $\pi(\lambda)=Gamma(4,2)$
+
+*Now, compute your posterior as $\pi(\lambda | y) \propto L(\lambda;y) \pi(\lambda)$ for the selected prior. If your first choice was correct, you will be able to compute it analitically.*
+
+If $y_i\sim Poisson(\lambda)$, then a $Gamma$ prior on $\lambda$ is a conjugate prior, because from
+
+$$
+\pi(\lambda) = \frac{\beta^\alpha}{\Gamma(\alpha)}\lambda^{\alpha-1}e^{-\beta\lambda}
+$$
+$$
+L(\lambda ; y) = \frac{e^{-n \lambda}\lambda^{\sum y_i}}{\prod_{i=1}^n (y_i !)}
+$$
+
+we have $\pi(\lambda | y) \propto Gamma(\sum y_i + \alpha, n +\beta)$.
+Therefore, the adequate prior is $Gamma(4,2)$. We could also exclude the other two cases a priori, since a normal distribution also takes negative values, while a beta distribution is defined over the interval $[0,1]$.
+
+```{r echo=TRUE}
+#generate some data from a poisson distribution
+set.seed(123)
+n = 15
+lambda_sample = 1
+y <- rpois(n, lambda_sample)
+
+# gamma prior
+alpha = 4
+beta = 2
+curve(dgamma(x, alpha, beta), xlim=c(-2,8), col="blue",
+      lty=1,lwd=2, ylim=c(0,2.2), ylab="density")
+
+# beta prior
+curve(dbeta(x, 4, 2), xlim=c(-2,8), col="blue", lty=2, 
+      lwd=1, add =T)
+
+# normal prior
+curve(dnorm(x, 1, 2), xlim=c(-2,8), col="blue", lty=3, 
+      lwd=1, add =T)
+
+# gamma posterior
+alpha_star = sum(y) + alpha
+beta_star = n + beta
+curve(dgamma(x, alpha_star, beta_star), 
+      xlab=expression(theta), ylab="", col="red", lwd=2, add=T)  
+
+legend(4, 1.5, 
+       c("gamma prior", "beta prior", "normal prior","gamma posterior"), 
+       c("blue", "blue","blue", "red" ),
+       lty=c(1,2,3,1), lwd=c(1,1,1), cex=0.8)
+```
+
+## Exercise 4
+
+*Open the file model called `biparametric.stan` and replace the line `target+=cauchy_lpdf(sigma|0,2.5);` with the following one: `target+=uniform_lpdf(sigma|0.1,10);`.*
+
+*Which prior are you now assuming for your parameter $\sigma$? Reproduce the same plots as above and briefly comment.*
+
+```{r echo=TRUE}
+library("bayesplot")
+library("ggplot2")
+
+#input values
+
+#true mean
+theta_sample <- 2
+#likelihood variance
+sigma2 <- 2
+#sample size
+n <- 10
+#prior mean
+mu <- 7
+#prior variance
+tau2 <- 2
+
+#generate some data
+set.seed(123)
+y <- rnorm(n,theta_sample, sqrt(sigma2))
+
+#launch biparametric Stan model
+data3<- list(N=n, y=y, a=-10, b=10)
+fit3 <- stan(file="stan/biparametric.stan", data = data3, 
+             chains = 4, iter=2000, refresh=-1)
+
+#extract stan output for biparametric model
+sim3 <- extract(fit3)
+posterior_biv <- as.matrix(fit3)
+
+theta_est <- mean(sim3$theta)
+sigma_est <- mean(sim3$sigma)
+c(theta_est, sigma_est)
+traceplot(fit3, pars=c("theta", "sigma"))
+
+plot_title <- ggtitle("Posterior distributions",
+                      "with medians and 80% intervals")
+
+mcmc_areas(posterior_biv, 
+           pars = c("theta","sigma"), 
+           prob = 0.8) + plot_title
+```
+
+In this case we are assuming that $\sigma \sim Unif(0.1,10)$, obtaining different mean and variance for both $\theta$ and $\sigma$ posterior distributions.
+
+## Exercise 5 
+
+*Reproduce the first plot above for the soccer goals, but this time by replacing Prior 1 with a `Gamma(2,4)`. Then, compute the final Bayes factor matrix (`BF_matrix`) with this new prior and the other ones unchanged, and comment. Is still Prior 2 favorable over all the others?*
+
+```{r echo=TRUE}
+library(LearnBayes)
+data(soccergoals)
+
+y <- soccergoals$goals
+
+#write the likelihood function via the gamma distribution
+lik_pois<- function(data, theta){
+  n <- length(data)
+  lambda <- exp(theta)
+  dgamma(lambda, shape =sum(data)+1, scale=1/n)
+}
+
+prior_gamma <- function(par, theta){
+  lambda <- exp(theta)
+  dgamma(lambda, par[1], rate=par[2])*lambda  
+}
+
+prior_norm <- function(npar, theta){
+  lambda=exp(theta)  
+  (dnorm(theta, npar[1], npar[2]))
+  
+}
+
+lik_pois_v <- Vectorize(lik_pois, "theta")
+prior_gamma_v <- Vectorize(prior_gamma, "theta")
+prior_norm_v <- Vectorize(prior_norm, "theta")
+
+#likelihood
+curve(lik_pois_v(theta=x, data=y), xlim=c(-4,5), 
+      xlab=expression(theta), ylab = "density", lwd =2 )
+#prior 1
+curve(prior_gamma_v(theta=x, par=c(4, 2)), lty =2, col="red",
+      add = TRUE, lwd =2)
+#prior 2 
+curve(prior_norm_v(theta=x, npar=c(1, .5)), lty =3, col="blue",
+      add =TRUE, lwd=2)
+#prior 3 
+curve(prior_norm_v(theta=x, npar=c(2, .5)), lty =4, col="green",
+      add =TRUE, lwd =2)
+#prior 4 
+curve(prior_norm_v(theta=x, npar=c(1, 2)), lty =5, col="violet",
+      add =TRUE, lwd =2)
+
+legend(2.6, 1.8,
+       c("Lik.", "Ga(4,2)", "N(1, 0.25)", 
+         "N(2,0.25)","N(1, 4)" ), lty=c(1,2,3,4,5),
+       col=c("black", "red", "blue", "green", "violet"),
+       lwd=2, cex=0.9)
+
+logpoissongamma <- function(theta, datapar){
+   data <- datapar$data
+   par <- datapar$par
+   lambda <- exp(theta)
+   log_lik <- log(lik_pois(data, theta))
+   log_prior <- log(prior_gamma(par, theta))
+   return(log_lik+log_prior)
+}
+
+logpoissongamma.v <- Vectorize( logpoissongamma, "theta")
+
+logpoissonnormal <- function( theta, datapar){
+ data <- datapar$data
+ npar <- datapar$par
+ lambda <- exp(theta)
+ log_lik <- log(lik_pois(data, theta))
+ log_prior <- log(prior_norm(npar, theta))
+  return(log_lik+log_prior)
+}  
+logpoissonnormal.v <- Vectorize( logpoissonnormal, "theta")
+
+#log-likelihood
+curve(log(lik_pois(y, theta=x)), xlim=c(-1,2),ylim=c(-20,2), 
+      lty =1, ylab="log-posteriors", xlab=expression(theta))
+#log posterior 1
+curve(logpoissongamma.v(theta=x, list(data=y, par=c(4, 2))),
+      col="red", xlim=c(-1,4),ylim=c(-20,2), lty =1, add =TRUE)
+#log posterior 2
+curve(logpoissonnormal.v( theta=x, datapar <- list(data=y,
+      par=c(1,.5))), 
+      lty =1, col="blue",  add =TRUE)
+#log posterior 3
+curve(logpoissonnormal.v( theta=x, datapar <- list(data=y,
+      par=c(2, .5))), lty =1, col="green", add =TRUE, lwd =2)
+#log posterior 4
+curve(logpoissonnormal.v( theta=x, list(data=y, par=c(1, 2))),
+      lty =1, col="violet", add =TRUE, lwd =2)
+
+legend(2.6, 1.3, c( "loglik", "lpost 1", "lpost 2", "lpost 3",
+                    "lpost 4" ), 
+       lty=1, col=c("black", "red", "blue", "green",
+                    "violet"),lwd=2, cex=0.9)
+
+datapar <- list(data=y, par=c(4, 2))
+fit1 <- laplace(logpoissongamma, .5, datapar)
+datapar <- list(data=y, par=c(1, .5))
+fit2 <- laplace(logpoissonnormal, .5, datapar)
+datapar <- list(data=y, par=c(2, .5))
+fit3 <- laplace(logpoissonnormal, .5, datapar)
+datapar <- list(data=y, par=c(1, 2))
+fit4 <- laplace(logpoissonnormal, .5, datapar)
+
+postmode <- c(fit1$mode, fit2$mode, fit3$mode, fit4$mode )
+postsds <- sqrt(c(fit1$var, fit2$var, fit3$var, fit4$var))
+logmarg <- c(fit1$int, fit2$int, fit3$int, fit4$int)
+cbind(postmode, postsds, logmarg)
+
+BF_matrix <- matrix(1, 4,4)
+for (i in 1:3){
+  for (j in 2:4){
+   BF_matrix[i,j]<- exp(logmarg[i]-logmarg[j])
+   BF_matrix[j,i]=(1/BF_matrix[i,j]) 
+  }
+}
+
+round_bf <- round(BF_matrix,3)
+round_bf
+
+```
+
+I suspect there's an error in the assignment, since if I replace Prior 1 with a $Gamma(4,2)$ (instead of $Gamma(2,4)$) It becomes the favorable one over the others. 
+
+## Exercise 6
+
+*Let $y=(1,0,0,1,0,0,0,0,0,1,0,0,1,0)$ collect the results of tossing $n=14$ times an unfair coin, where 1 denotes heads and 0 crosses, and $p=Prob(y_i=1)$.*
+
+* *Looking at the `Stan` code for the other models, write a short `Stan` Beta-Binomial model, where $p$ has a $Beta(a,b)$ prior with $a=3, b=3$;*
+
+* *Extract the posterior distribution with the function `extract()`;*
+
+* *Compute analitically the posterior distribution and compare it with the `Stan` distribution.*
+
+```{r echo=TRUE}
+# data
+y <- c(1,0,0,1,0,0,0,0,0,1,0,0,1,0)
+#sample size
+n <- length(y)
+# success probability
+sample_prob <- sum(y)/n
+
+# prior
+alpha <- 3
+beta <- 3
+curve(dbeta(x, alpha, beta), xlim=c(-0.5,1.5), ylim=c(0,4), col="red", lty=1,lwd=2, ylab="density")
+
+#launch Stan model
+data <- list(N=n, y=sum(y), alpha=3, beta=3)
+fit <- stan(file="stan/beta_binomial.stan", data = data, 
+            chains = 4, iter=2000)
+
+#extract Stan output
+sim <- extract(fit)
+
+#stan simulated posterior
+lines(density(sim$p, adj=2), col ="black", lwd=1, lty =2)
+
+# true posterior
+alpha_star <- alpha + sum(y)
+beta_star <- beta + n - sum(y)
+curve(dbeta(x, alpha_star , beta_star), lty=3, lwd=1,
+      col="blue", add=T)
+
+legend(1, 2, c("Prior", "Stan posterior", "True posterior"),
+       c("red", "black", "blue"), lty=c(1,2,3),
+       lwd=c(2,1,1), cex=0.6)
+```
+
