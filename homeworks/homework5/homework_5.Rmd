@@ -1,9 +1,13 @@
 ---
-title: "Homework 4"
+title: "Homework 5"
+author: "Ginevra Carbone"
 output:
-  pdf_document: default
+  html_document:
+    df_print: paged
+    toc: yes
   html_notebook: default
-editor_options: 
+  pdf_document: default
+editor_options:
   chunk_output_type: inline
 ---
 ```{r setup, include=FALSE}
@@ -11,86 +15,485 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(cache = TRUE)
 ```
 
-*Ginevra Carbone*
+```{r echo=FALSE, message = FALSE}
+library(DAAG)
+library(MASS)
+library(dplyr)
+library(boot)
+library(MPV)
+```
   
-# Chapter 6  
+# DAAG Chapter 6  
   
-## Exercise 6
+## Exercise 6 
 
-The following investigates the consequences of not using a logarithmic transformation for the `nihills` data analysis. The second differs from the first in having a `dist × climb` interaction term, additional to linear terms in `dist` and `climb`.
+*The following investigates the consequences of not using a logarithmic transformation for the `nihills` data analysis. The second differs from the first in having a `dist × climb` interaction term, additional to linear terms in `dist` and `climb`.*
 
-(a) Fit the two models:
+*(a) Fit the two models:*
+
 ```{r echo=TRUE}
-
 nihills.lm <- lm(time ~ dist+climb, data=nihills)
 nihills2.lm <- lm(time ~ dist+climb+dist:climb, data=nihills)
+
+# anova only works on nested models
 anova(nihills.lm, nihills2.lm)
 ```
 
-(b) Using the F -test result, make a tentative choice of model, and proceed to examine diag-
-nostic plots. Are there any problematic observations? What happens if these points are
-removed? Refit both of the above models, and check the diagnostics again.
+*(b) Using the F-test result, make a tentative choice of model, and proceed to examine diagnostic plots. Are there any problematic observations? What happens if these points are removed? Refit both of the above models, and check the diagnostics again.*
+
+The small p-value suggests that model 2 is better than model 1 (we reject the hypothesis of the coefficient for `dist x climb` being null).
+
+```{r echo=TRUE, warning=FALSE}
+# diagnostic plot for model 2
+par(mfrow=c(2,2))
+plot(nihills2.lm)
+par(mfrow=c(1,1))
+```
+
+Slieve Donard and Meelbeg Meelmore have high residuals, while Seven Sevens is an evident outlier, since it has a very high Cook distance. Let's check the contribution of these observations to the model.
+
+```{r echo=TRUE}
+# removing Slieve Donard
+nihillsSD <- nihills %>% 
+  subset(rownames(nihills) != "Slieve Donard") 
+nihills2.lmSD <- lm(time ~ dist+climb+dist:climb, data=nihillsSD)
+
+summary(nihills2.lm)
+summary(nihills2.lmSD)
+```
+
+```{r echo=TRUE}
+# removing Meelbeg Meelmore
+nihillsMM <- nihills %>% 
+  subset(rownames(nihills) != "Meelbeg Meelmore")
+nihills2.lmMM <- lm(time ~ dist+climb+dist:climb, data=nihillsMM)
+
+summary(nihills2.lm)
+summary(nihills2.lmMM)
+```
+
+The residual standard error is sligthly smaller in both cases, but not enough to justify removing them.
+
+```{r echo=TRUE}
+# removing Seven Sevens
+nihillsSS <- nihills %>% 
+  subset(rownames(nihills) != "Seven Sevens")
+
+# fitting the second model again
+nihills2.lmSS <- lm(time ~ dist+climb+dist:climb, data=nihillsSS)
+
+# comparing models
+summary(nihills2.lm)
+summary(nihills2.lmSS)
+```
+
+Removing `Seven Sevens` almost makes no difference in the redisual standard error. 
+
+The term `dist x climb` is no longer significant. Let's go back to the first model and analyze its diagnostic plot.
+
+```{r echo=TRUE}
+# first model diagnostic plots
+par(mfrow=c(2,2))
+plot(nihills.lm)
+par(mfrow=c(1,1))
+```
+
+`Seven Sevens` is still a problematic outlier. It also has a high residual, together with `Annalong Horseshoe`.
+
+```{r echo=TRUE}
+# remove Annalong Horseshoe
+nihillsAH <- nihills %>% 
+  subset(rownames(nihills) != "Annalong Horseshoe")
+
+nihills.lmAH <- lm(time ~ dist+climb, data=nihillsAH)
+
+# comparing models
+summary(nihills.lm)
+summary(nihills.lmAH)
+```
+
+The residual standard error is almost the same.
+
+```{r echo=TRUE}
+nihills.lmSS <- lm(time ~ dist+climb, data=nihillsSS)
+summary(nihills.lm)
+summary(nihills.lmSS)
+```
+
+In this case removing `Seven Sevens` significantly improves the residual standard error (from 0.0973 to 0.04619), but it's still worse than model 2, as shown by the results collected in the following table:
+
+```{r echo=TRUE}
+table <- data.frame(AIC=c(extractAIC(nihills.lmSS)[2], extractAIC(nihills2.lmSS)[2]),
+           Adj_R2=c(summary(nihills.lmSS)$adj.r.squared, summary(nihills2.lmSS)$adj.r.squared),
+           RSE = c(summary(nihills.lmSS)$sigma, summary(nihills2.lmSS)$sigma),
+           row.names = c("Model 1","Model 2"))
+
+table
+```
 
 ## Exercise 7
 
-Check the variance inflation factors for `bodywt` and `lsize` for the model `brainwt ~ bodywt + lsize`, fitted to the `litters` data set. Comment.
+*Check the variance inflation factors for `bodywt` and `lsize` for the model `brainwt ~ bodywt + lsize`, fitted to the `litters` data set. Comment.*
 
 ```{r echo=TRUE}
+vif(lm(brainwt ~ bodywt + lsize, data=litters))
 ```
 
-## Exercise 8
+VIF values higher than 10 show a problem of high multicollinearity between the explanatory variables `brainwt` and `bodywt`, meaning that there is a linear relashionship between them.
 
-Apply the `lm.ridge()` function to the litters data, using the generalized cross-validation (GCV) criterion to choose the tuning parameter. (GCV is an approximation to cross-validation.)
+## Exercise 8 
 
-(a) In particular, estimate the coefficients of the model relating `brainwt` to `bodywt` and `lsize` and compare with the results obtained using `lm()`.
+*Apply the `lm.ridge()` function to the litters data, using the generalized cross-validation (GCV) criterion to choose the tuning parameter. (GCV is an approximation to cross-validation.)*
 
-(b) Using both ridge and ordinary regression, estimate the mean brain weight when litter size is 10 and body weight is 7. Use the bootstrap, with case-resampling, to compute approximate 95% percentile confidence intervals using each method. Compare with the interval obtained using `predict.lm()`.
+*(a) In particular, estimate the coefficients of the model relating `brainwt` to `bodywt` and `lsize` and compare with the results obtained using `lm()`.*
 
-## Exercise 10
+```{r echo=TRUE, message=FALSE}
+#select lambda in terms of GCV error
+select <- MASS::select
+select(lm.ridge(brainwt ~ bodywt + lsize, data = litters, 
+                lambda = seq(0,0.1,0.001)))
 
-The data frame table.b3 in the MPV package contains data on gas mileage and 11 other variables for a sample of 32 automobiles.
+# apply ridge function with the chosen lambda
+litters.ridge <- lm.ridge(brainwt ~ bodywt + lsize, data = litters, lambda = 0.1)
+litters.ridge
 
-(a) Construct a scatterplot of `y` (mpg) versus `x1` (displacement). Is the relationship between these variables non-linear?
+# compare to lm coefficients
+litters.lm <- summary(lm(brainwt ~ bodywt + lsize, data = litters))$coefficients[,1]
+litters.lm
+```
 
-(b) Use the `xyplot()` function, and `x11` (type of transmission) as a group variable. Is a linear model reasonable for these data?
+`bodywt` and `lsize` are penalized in favour of the intercept coefficient.
 
-(c) Fit the model relating `y` to `x1` and `x11` which gives two lines having possibly different slopes and intercepts. Check the diagnostics. Are there any influential observations? Are there any influential outliers?
+*(b) Using both ridge and ordinary regression, estimate the mean brain weight when litter size is 10 and body weight is 7. Use the bootstrap, with case-resampling, to compute approximate 95% percentile confidence intervals using each method. Compare with the interval obtained using `predict.lm()`.*
 
-(d) Plot the residuals against the variable `x7` (number of transmission speeds), again using `x11` as a group variable. Is there anything striking about this plot?
+```{r echo=TRUE}
+paste("ridge estimate: ",
+      as.vector(coef(litters.ridge))%*%c(1,7,10))
+paste("lm estimate: ",
+      as.vector(litters.lm)%*%c(1,7,10))
+```
 
-# Chapter 8
+```{r echo=FALSE}
+# implemento a mano? altrimenti library boot
+
+# predict brainwt values
+# obs.lm <- my_lm(7,10) 
+# che idiota... sta roba ne genera soltanto una
+
+# generate bootstrap samples
+# for(i in 1:B) {
+#   ind <- sample(1:n, n, replace = TRUE)
+#   s_vect[i] <- litters$brainwt[ind]
+# }
+
+# # percentile method for CI
+# perc_ci <- quantile(s_vect, prob=c(0.025, 0.975))
+# attr(perc_ci, "names") <- NULL
+# perc_ci
+# 
+# # basic method
+# basic_ci <- 2 * obs.lm - quantile(s_vect, prob=c(0.975, 0.025))
+# attr(basic_ci, "names") <- NULL
+# basic_ci
+```
+
+Let's start from ordinary regression. These are the bootstrap based confidence intervals obtained using basic method and percentile method.
+
+```{r echo=TRUE, warning=FALSE}
+# linear model
+my_lm <- function(data, ind){
+  # sample selection
+  d <- data[ind,] 
+  # model fit
+  litters.lm <- summary(lm(brainwt ~ bodywt + lsize, 
+                         data = d))$coefficients[,1]
+  # coefficients
+  coef <- as.vector(litters.lm)
+  # prediction on given values
+  return(coef%*%c(1,7,10))
+}
+
+litters.boot <- boot(data=litters, statistic=my_lm, R=10^4)
+boot.ci(litters.boot, conf=0.95, type=c("basic","perc"))
+```
+
+Using Ridge regression:
+
+```{r echo=TRUE}
+# ridge regression
+my_ridge <- function(data, ind){
+  # sample selection
+  d <- data[ind,] 
+  # model fit
+  litters.ridge <- lm.ridge(brainwt ~ bodywt + lsize, 
+                            data = d, lambda = 0.1)
+  # coefficients
+  coef <- as.vector(coef(litters.ridge))
+  # prediction on given values
+  return(coef%*%c(1,7,10))
+}
+
+litters.boot <- boot(data=litters, statistic=my_ridge, R=10^4)
+boot.ci(litters.boot, conf=0.95, type=c("basic","perc"))
+```
+
+Let's now compute the interval with `predict.lm()` (we cannot use it on a `ridgelm` object.)
+
+```{r echo=TRUE}
+# variables for prediction
+new <- data.frame(bodywt = 7, lsize = 10)
+
+# estimated value and CI
+predict.lm(lm(brainwt ~ bodywt + lsize, 
+              data = litters),
+          newdata = new,
+          interval = "confidence")
+```
+
+
+## Exercise 10 
+
+*The data frame `table.b3` in the MPV package contains data on gas mileage and 11 other variables for a sample of 32 automobiles.*
+
+*(a) Construct a scatterplot of `y` (mpg) versus `x1` (displacement). Is the relationship between these variables non-linear?*
+
+```{r echo=TRUE}
+data <- table.b3
+par(mfrow=c(1,2))
+plot(y ~ x1, ylab="mpg", xlab = "displacement", data = data)
+plot(y ~ log(x1), ylab="mpg", xlab = "log(displacement)", data = data)
+par(mfrow=c(1,1))
+```
+
+The scatterplot shows a negative non-linear relationship between mpg and displacement. By applying a log transformation to displacement, the relationship almost looks like a negative linear one.
+
+*(b) Use the `xyplot()` function, and `x11` (type of transmission) as a group variable. Is a linear model reasonable for these data?*
+
+```{r echo=TRUE}
+par(mfrow=c(1,2))
+xyplot( y ~ x1,
+        data = data,
+        group = x11,
+        type = c("p","r"))
+
+xyplot( y ~ log(x1),
+        data = data,
+        group = x11,
+        type = c("p","r"))
+par(mfrow=c(1,1))
+```
+
+If we consider the grouping of data, a linear model doesn't seem reasonable because we aim at achieving an homogeneity of variance between different groups. The situation assumption becomes reasonable if we apply the log transform first.
+
+*(c) Fit the model relating `y` to `x1` and `x11` which gives two lines having possibly different slopes and intercepts. Check the diagnostics. Are there any influential observations? Are there any influential outliers?*
+
+```{r echo=TRUE}
+lm.fit <- lm(y ~ x1 + x11, data = data)
+anova(lm.fit)
+
+par(mfrow=c(2,2))
+plot(lm.fit)
+par(mfrow=c(1,1))
+```
+
+Data points 12 and 15 have higher residual, but removing them from the model gives no improvement.
+
+```{r echo=TRUE}
+summary(lm.fit)
+
+data2 <- data %>%
+  subset(rownames(data) != "12")
+
+lm.fit2 <- lm(y ~ x1 + x11, data = data2)
+
+summary(lm.fit2)
+
+data3 <- data %>%
+  subset(rownames(data) != "15")
+
+lm.fit3 <- lm(y ~ x1 + x11, data = data3)
+
+summary(lm.fit3)
+```
+
+Moreover, looking at Cook distance, there are no influential outliers.
+
+*(d) Plot the residuals against the variable `x7` (number of transmission speeds), again using `x11` as a group variable. Is there anything striking about this plot?*
+
+```{r echo=TRUE}
+xyplot(residuals(lm.fit) ~ x7, data = data, 
+       groups = x11, 
+       ylab = "residuals", 
+       xlab="number of transmission speeds")
+```
+
+This plot is distributed along vertical lines because `x7` is a categorical variable. It enhances the different variance of the residual between groups. We can notice that the first category in `x7` contains a single point labeled as 0 in `x11`.
+
+# DAAG Chapter 8
 
 ## Exercise 1
 
-The following table shows numbers of occasions when inhibition (i.e., no flow of current across a membrane) occurred within 120 s, for different concentrations of the protein peptide-C (data
-are used with the permission of Claudia Haarmann, who obtained these data in the course of her PhD research). The outcome yes implies that inhibition has occurred.
-Use logistic regression to model the probability of inhibition as a function of protein concentration.
+*The following table shows numbers of occasions when inhibition (i.e., no flow of current across a membrane) occurred within 120 s, for different concentrations of the protein peptide-C (data are used with the permission of Claudia Haarmann, who obtained these data in the course of her PhD research). The outcome yes implies that inhibition has occurred.*
 
-## Exercise 2
+```{r echo=TRUE}
+conc <- c(0.1, 0.5, 1, 10, 20, 30, 50, 70, 80, 100, 150)
+no <- c(7, 1, 10, 9, 2, 9, 13, 1, 1, 4, 3)
+yes <- c(0, 0, 3, 4, 0, 6, 7, 0, 0, 1, 7)
+df <- data.frame("conc"=conc, "no"=no, "yes"=yes)
+df
+```
 
-In the data set (an artificial one of 3121 patients, that is similar to a subset of the data ana-lyzed in Stiell et al., 2001) minor.head.injury, obtain a logistic regression model relating clinically.important.brain.injury to other variables. Patients whose risk is sufficiently high will be sent for CT (computed tomography). Using a risk threshold of 0.025 (2.5%), turn the result into a decision rule for use of CT.
+*Use logistic regression to model the probability of inhibition as a function of protein concentration.*
 
-## Exercise 5
+```{r echo=TRUE}
+# logistic regression fit
+logit.fit1 <- glm(as.factor(no) ~ conc,
+                 family=binomial(link="logit"), 
+                 data=df)
 
-Use the function `logisticsim()` (in the DAAG package) to simulate data from a logistic regression model to study the `glm()` function. For example, you might try experiments such as
-the following:
+summary(logit.fit1)
+```
 
-(a) Simulate 100 observations from the model $$ logit(x) = 2 − 4x $$ for $x = 0, 0.01, 0.02, . . . , 1.0$. [This is the default setting for logisticsim().]
+This model assumes that inhibition occurs with a probability that in logistic scale is a linear function of the concentration:
+$$ 
+logit(p) = log(odds) = \beta_0 + \beta_1 conc
+$$
 
-(b) Plot the responses ($y$) against the “dose” ($x$). Note how the pattern of 0s and 1s changes as $x$ increases.
+As we can see in the summary of this model, p-values are high, due to the small number of observations.
 
-(c) Fit the logistic regression model to the simulated data, using the binomial family. Compare the estimated coefficients with the true coefficients. Are the estimated coefficients
-within about 2 standard errors of the truth?
+Let's also give a graphical representation of the result.
 
-(d) Compare the estimated logit function with the true logit function. How well do you think the fitted logistic model would predict future observations? For a concrete indication of the
-difference, simulate a new set of 100 observations at the same x values, using a specified pseudorandom number generator seed and the true model. Then simulate some predicted observations using the estimated model and the same seed.
+```{r echo=TRUE}
+df$emplogit <- log((df$no+0.5)/(df$yes+0.5))
 
-## Exercise 6
+plot(emplogit ~ conc, data=df,
+     xlab = "Concentration",
+     ylab = "Empirical logit",
+     pch = 16)
 
-As in the previous exercise, the function `poissonsim()` allows for experimentation with Poisson regression. In particular, `poissonsim()` can be used to simulate Poisson responses with log-rates equal to $a + bx$, where $a$ and $b$ are fixed values by default.
-
-(a) Simulate 100 Poisson responses using the model $$log λ = 2 − 4x$$ for $x = 0, 0.01, 0.02 . . . , 1.0$. Fit a Poisson regression model to these data, and compare the estimated coefficients with the true coefficients. How well does the estimated model predict future observations?
-
-(b) Simulate 100 Poisson responses using the model $$log λ = 2 − bx$$ where $b$ is normally distributed with mean 4 and standard deviation 5. [Use the argument `slope.sd=5` in the `poissonsim()` function.] How do the results using the poisson and quasipoisson families differ?
+abline(logit.fit1)
+```
 
 
+## Exercise 2 
+
+*In the data set (an artificial one of 3121 patients, that is similar to a subset of the data analyzed in Stiell et al., 2001) `minor.head.injury`, obtain a logistic regression model relating `clinically.important.brain.injury` to other variables. Patients whose risk is sufficiently high will be sent for CT (computed tomography). Using a risk threshold of 0.025 (2.5%), turn the result into a decision rule for use of CT.*
+
+```{r echo=TRUE}
+injury.fit <- glm(clinically.important.brain.injury ~ .,
+                 family=binomial(link="logit"),
+                 data=head.injury)
+
+summary(injury.fit)
+```
+
+```{r echo=TRUE}
+# divide into train and test sets
+size <- nrow(head.injury)
+train <- head.injury[1:size*0.6,]
+test <- head.injury[(size*0.6+1):size,] 
+
+# fit the model
+injury.fit <- glm(clinically.important.brain.injury ~ .,
+                 family=binomial(link="logit"),
+                 data=train)
+
+probabilities <- predict(injury.fit, test)
+
+# from model to binary classification with threshold 0.025
+predictions <- ifelse(probabilities > 0.025, 1, 0)
+
+# measuring the accuracy of predictions
+misClasificError <- mean(predictions != test$clinically.important.brain.injury)
+print(paste('Accuracy', 1-misClasificError))
+
+# table of predictions
+table <- table(actual=test$clinically.important.brain.injury, predicted=predictions)
+
+table
+```
+
+## Exercise 5 
+
+*Use the function `logisticsim()` (in the DAAG package) to simulate data from a logistic regression model to study the `glm()` function. For example, you might try experiments such as the following:*
+
+*(a) Simulate 100 observations from the model logit(x)=2-4x for $x=0,0.01,0.02,...,1.0$. [This is the default setting for `logisticsim()`.]*
+
+```{r echo=TRUE}
+x <- seq(0,1,0.01)
+sim <- logisticsim(x, a = 2, b = -4)
+```
+
+*(b) Plot the responses ($y$) against the “dose” ($x$). Note how the pattern of 0s and 1s changes as $x$ increases.*
+
+```{r echo=TRUE}
+plot(y ~ x, data = sim)
+```
+
+*(c) Fit the logistic regression model to the simulated data, using the binomial family. Compare the estimated coefficients with the true coefficients. Are the estimated coefficients within about 2 standard errors of the truth?*
+
+```{r echo=TRUE}
+model.fit <- glm(y ~ x, family=binomial(link="logit"), 
+                 data = sim)
+
+summary(model.fit)$coeff
+```
+
+The estimated coefficients are 1.666875 and -3.382546. They are within about 2 standard errors of the truth, as we can see in the second column.
+
+*(d) Compare the estimated logit function with the true logit function. How well do you think the fitted logistic model would predict future observations? For a concrete indication of the difference, simulate a new set of 100 observations at the same x values, using a specified pseudorandom number generator seed and the true model. Then simulate some predicted observations using the estimated model and the same seed.*
+
+```{r echo=TRUE}
+# simulate observations from the real model
+sim1 <- logisticsim(x, a = 2, b = -4, seed=342)
+
+# simulate observations from the estimated model
+sim2 <- logisticsim(x, a = 1.763179, b = -3.491443, seed=342)
+
+# comparing predictions
+mean(sim1$y==sim2$y)
+```
+
+The estimated model is very similar to the real one: 97% of predicted observations coincide.
+
+## Exercise 6 
+
+*As in the previous exercise, the function `poissonsim()` allows for experimentation with Poisson regression. In particular, `poissonsim()` can be used to simulate Poisson responses with log-rates equal to $a+bx$, where $a$ and $b$ are fixed values by default.*
+
+*(a) Simulate 100 Poisson responses using the model $$log(\lambda)=2-4x$$ for $x=0,0.01,0.02,...,1.0$. Fit a Poisson regression model to these data, and compare the estimated coefficients with the true coefficients. How well does the estimated model predict future observations?*
+
+```{r echo=TRUE}
+# simulate poisson observations
+x <- seq(0,1,0.01)
+sim3 <- poissonsim(x, a = 2, b = -4, seed=123)
+
+# fit a poisson regression model
+model.fit3 <- glm(y ~ x, family=poisson, data = sim3)
+
+# get predicted coefficients
+summary(model.fit)$coeff
+
+# simulate observations from the estimated model
+sim4 <- poissonsim(x, a = 2.171313, b = -4.504560, seed=123)
+
+# comparing predictions
+mean(sim3$y==sim4$y)
+```
+
+Predictions coincide 83% of the times.
+
+*(b) Simulate 100 Poisson responses using the model $$log(\lambda)=2-bx$$ where $b$ is normally distributed with mean 4 and standard deviation 5. [Use the argument `slope.sd=5` in the `poissonsim()` function.] How do the results using the poisson and quasipoisson families differ?*
+
+```{r echo=TRUE}
+b <- rnorm(100, 4, 5)
+sim5 <- poissonsim(seq(0.01,1,0.01), a = 2, b = b, slope.sd = 5)
+
+model.fit5_pois <- glm(y ~ x, family=poisson, data = sim5)
+model.fit5_quasip <- glm(y ~ x, family=quasipoisson, data = sim5)
+
+summary(model.fit5_pois)
+summary(model.fit5_quasip)
+```
+
+The two models predict the same coefficients, because the only difference between them is the introduction of the dispersion parameter (which is set to 1 in Poisson model).
+As a direct consequence the standard errors are scaled by the square root of this parameter, so also confidence intervals and p-values change.
