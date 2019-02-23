@@ -1,7 +1,0 @@
-base
-ggplot2
-StanHeaders
-rstan
-bayesplot
-bindrcpp
-LearnBayes
